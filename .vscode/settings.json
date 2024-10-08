@@ -1,0 +1,50 @@
+{
+  "files.autoSave": "afterDelay",
+  "window.zoomLevel": 0.95,
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "editor.fontSize": 15,
+  "editor.fontFamily": "Consolas",
+  "editor.fontLigatures": true,
+  "editor.fontWeight": "400",
+  "editor.lineHeight": 1.2,
+  "editor.codeLensFontFamily": "Consolas",
+  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.fontFamily": "Consolas",
+  "terminal.integrated.fontWeight": "400",
+  //"explorer.experimental.fileNesting.expand": false,
+
+  "files.trimTrailingWhitespace": true,
+  "npm.packageManager": "pnpm",
+  "eslint.packageManager": "pnpm",
+  //"tslint.packageManager": "pnpm",
+  "stylelint.packageManager": "pnpm",
+  "npm-intellisense.packageSubfoldersIntellisense": true,
+
+  "[Log]": {
+    "editor.fontSize": 14
+  },
+
+  "[markdown]": {
+    "editor.wordWrap": "bounded",
+    "editor.wordWrapColumn": 80
+  },
+
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": false
+  },
+
+  "[svelte]": {
+    "editor.defaultFormatter": "svelte.svelte-vscode"
+  },
+
+  "markdownlint.config": {
+    "MD028": false,
+    "MD025": {
+      "front_matter_title": ""
+    }
+  },
+  "debug.closeReadonlyTabsOnEnd": true
+}
