@@ -1,47 +1,51 @@
-# Svelte + TS + Vite
+# Google Mail App with Svelte and SvelteKit
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+This project is a simple Google Mail application built with Svelte, TypeScript, and Vite. It allows users to view their recent emails from their Gmail account.
 
-## Recommended IDE Setup
+## Prerequisites
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+Before running this application, make sure you have:
 
-## Need an official Svelte framework?
+1. Node.js installed (version 14 or later)
+2. A Google Cloud Platform project with the Gmail API enabled
+3. OAuth 2.0 credentials (a `credentials.json` file) for your Google Cloud Platform project
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
+## Setup
 
-## Technical considerations
+1. Clone this repository to your local machine.
+2. Place your `credentials.json` file in the root directory of the project.
+3. Install the dependencies:
 
-**Why use this over SvelteKit?**
-
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
-
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
-
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
-
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
-
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `allowJs` in the TS template?**
-
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```bash
+npm install
 ```
+
+## Running the Application
+
+1. Start the backend server:
+
+```bash
+npm run server
+```
+
+2. In a new terminal, start the frontend development server:
+
+```bash
+npm run dev
+```
+
+3. Open your browser and navigate to `http://localhost:5173` (or the URL provided by Vite).
+
+4. The first time you run the application, you'll need to authorize it to access your Gmail account. Follow the prompts in the console to complete the authorization process.
+
+## Project Structure
+
+- `server.js`: The backend server that handles authentication with Google and fetches emails.
+- `src/App.svelte`: The main Svelte component that orchestrates the application.
+- `src/lib/EmailList.svelte`: Component for displaying the list of emails.
+- `src/lib/EmailViewer.svelte`: Component for viewing the contents of a selected email.
+- `src/types.ts`: TypeScript definitions for the application.
+
+## Note
+
+This is a basic implementation and does not include features like sending emails, pagination, or advanced email management. It's intended as a starting point for building more complex Gmail applications.

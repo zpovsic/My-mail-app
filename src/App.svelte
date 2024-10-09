@@ -7,17 +7,21 @@
   let emails: GmailMessage[] = [];
   let selectedEmail: GmailMessage | null = null;
   let error: string | null = null;
+  let loading: boolean = true;
 
   onMount(async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/emails');
+      const response = await fetch('http://localhost:3001/api/emails');
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.error}, details: ${errorData.details}`);
       }
       emails = await response.json();
     } catch (e) {
       console.error('Error fetching emails:', e);
-      error = 'Failed to fetch emails. Please try again later.';
+      error = `Failed to fetch emails: ${e.message}. Please make sure the server is running and credentials are set up correctly.`;
+    } finally {
+      loading = false;
     }
   });
 
@@ -28,7 +32,9 @@
 
 <main>
   <h1>Google Mail App</h1>
-  {#if error}
+  {#if loading}
+    <p>Loading emails...</p>
+  {:else if error}
     <p class="error">{error}</p>
   {:else}
     <div class="app-container">
@@ -46,5 +52,6 @@
   .error {
     color: red;
     font-weight: bold;
+    white-space: pre-wrap;
   }
 </style>
