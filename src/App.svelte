@@ -1,24 +1,26 @@
 <script lang="ts">
-  import EmailList from './lib/EmailList.svelte';
-  import EmailViewer from './lib/EmailViewer.svelte';
-  import { onMount } from 'svelte';
-  import type { GmailMessage } from './types';
+  import { onMount } from "svelte";
+  import type { GmailMessage } from "./types";
 
   let emails: GmailMessage[] = [];
   let selectedEmail: GmailMessage | null = null;
   let error: string | null = null;
   let loading: boolean = true;
 
+  const apiPort = import.meta.env.VITE_API_PORT;
+
   onMount(async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/emails');
+      const response = await fetch(`http://localhost:${apiPort}/api/emails`);
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.error}, details: ${errorData.details}`);
+        throw new Error(
+          `HTTP error! status: ${response.status}, message: ${errorData.error}, details: ${errorData.details}`
+        );
       }
       emails = await response.json();
     } catch (e) {
-      console.error('Error fetching emails:', e);
+      console.error("Error fetching emails:", e);
       error = `Failed to fetch emails: ${e.message}. Please make sure the server is running and credentials are set up correctly.`;
     } finally {
       loading = false;
@@ -38,7 +40,10 @@
     <p class="error">{error}</p>
   {:else}
     <div class="app-container">
-      <EmailList {emails} on:selectEmail={(event) => handleSelectEmail(event.detail)} />
+      <EmailList
+        {emails}
+        on:selectEmail={(event) => handleSelectEmail(event.detail)}
+      />
       <EmailViewer email={selectedEmail} />
     </div>
   {/if}
