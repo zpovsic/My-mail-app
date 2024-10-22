@@ -8,6 +8,7 @@
   let loading: boolean = true;
 
   const apiPort = import.meta.env.VITE_API_PORT;
+  console.log('API Port:', apiPort);
 
   onMount(async () => {
     try {
