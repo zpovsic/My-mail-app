@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { GmailMessage } from "./types";
+  import EmailList from "./lib/EmailList.svelte";
+  import EmailViewer from "./lib/EmailViewer.svelte";
 
   let emails: GmailMessage[] = [];
   let selectedEmail: GmailMessage | null = null;
@@ -8,11 +10,29 @@
   let loading: boolean = true;
 
   const apiPort = import.meta.env.VITE_API_PORT;
-  console.log('API Port:', apiPort);
+  const apiUrl = `http://localhost:${apiPort}/api/emails`;
+
+  async function checkServerConnection(): Promise<boolean> {
+    try {
+      const response = await fetch(apiUrl, { method: 'HEAD' });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
 
   onMount(async () => {
     try {
-      const response = await fetch(`http://localhost:${apiPort}/api/emails`);
+      if (!apiPort) {
+        throw new Error('API port is not configured. Please check your .env file.');
+      }
+
+      const isServerRunning = await checkServerConnection();
+      if (!isServerRunning) {
+        throw new Error(`Cannot connect to server at ${apiUrl}. Is the server running?`);
+      }
+
+      const response = await fetch(apiUrl);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
@@ -22,7 +42,13 @@
       emails = await response.json();
     } catch (e) {
       console.error("Error fetching emails:", e);
-      error = `Failed to fetch emails: ${e.message}. Please make sure the server is running and credentials are set up correctly.`;
+      error = `Failed to fetch emails: ${e instanceof Error ? e.message : String(e)}
+
+Please check:
+1. Backend server is running on port ${apiPort}
+2. Run 'npm start' or 'node server.js' in the backend directory
+3. Check if your .env file has the correct VITE_API_PORT value
+4. Ensure there are no firewall issues blocking the connection`;
     } finally {
       loading = false;
     }

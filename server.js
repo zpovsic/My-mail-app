@@ -1,10 +1,9 @@
-import dotenv from 'dotenv';
+import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
 import cors from "cors";
 import { google } from "googleapis";
-import { authenticate } from "@google-cloud/local-auth";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -13,7 +12,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = process.env.PORT || 3001; // Use environment variable for port
+const port = process.env.PORT || 4000;
+console.log("Port:", port);
 
 app.use(cors());
 
@@ -23,8 +23,8 @@ const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
 
 async function loadSavedCredentialsIfExist() {
   try {
-    const content = await fs.readFile(TOKEN_PATH);
-    const credentials = JSON.parse(content.toString());
+    const content = await fs.readFile(TOKEN_PATH, "utf8");
+    const credentials = JSON.parse(content);
     return google.auth.fromJSON(credentials);
   } catch (err) {
     console.log("No saved credentials found.");
@@ -55,15 +55,45 @@ async function authorize() {
   if (client) {
     return client;
   }
+
   try {
-    client = await authenticate({
-      scopes: SCOPES,
-      keyfilePath: CREDENTIALS_PATH,
+    // Read the credentials file
+    const content = await fs.readFile(CREDENTIALS_PATH);
+    const keys = JSON.parse(content.toString());
+    const key = keys.installed || keys.web;
+
+    // Create OAuth2 client
+    const oAuth2Client = new google.auth.OAuth2(
+      key.client_id,
+      key.client_secret,
+      key.redirect_uris[0]
+    );
+
+    // Generate auth url
+    const authUrl = oAuth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
     });
-    if (client.credentials) {
-      await saveCredentials(client);
+
+    console.log('Authorize this app by visiting this url:', authUrl);
+
+    // Instead of automatic browser auth, we'll require manual input
+    console.log('After authorizing, copy the code from the redirect URL and set it in your .env file as AUTH_CODE');
+
+    // Check if we have an auth code in env
+    const code = process.env.AUTH_CODE;
+    if (!code) {
+      throw new Error('Please set AUTH_CODE in your .env file after visiting the auth URL');
     }
-    return client;
+
+    // Get tokens
+    const { tokens } = await oAuth2Client.getToken(code);
+    oAuth2Client.setCredentials(tokens);
+
+    // Save the tokens
+    await saveCredentials(oAuth2Client);
+
+    return oAuth2Client;
   } catch (err) {
     console.error("Error during authorization:", err);
     throw err;
@@ -71,29 +101,45 @@ async function authorize() {
 }
 
 async function listMessages(auth) {
-  const gmail = google.gmail({ version: "v1", auth });
+  const gmail = google.gmail({ version: 'v1', auth });
+  let allMessages = [];
+  let pageToken = null;
+
   try {
-    const res = await gmail.users.messages.list({
-      userId: "me",
-      maxResults: 10,
-    });
-    return res.data.messages || [];
+    do {
+      const response = await gmail.users.messages.list({
+        userId: 'me',
+        labelIds: ['UNREAD'],
+        maxResults: 100,
+        pageToken: pageToken,
+      });
+
+      const messages = response.data.messages || [];
+      allMessages = allMessages.concat(messages);
+      pageToken = response.data.nextPageToken;
+
+      console.log(`Fetched ${allMessages.length} unread emails so far...`);
+    } while (pageToken);
+
+    console.log(`Total unread emails fetched: ${allMessages.length}`);
+    return allMessages;
   } catch (err) {
-    console.error("Error listing messages:", err);
+    console.error('Error fetching messages:', err);
     throw err;
   }
 }
 
-async function getMessage(auth, id) {
-  const gmail = google.gmail({ version: "v1", auth });
+async function getMessage(auth, messageId) {
+  const gmail = google.gmail({ version: 'v1', auth });
   try {
-    const res = await gmail.users.messages.get({
-      userId: "me",
-      id: id,
+    const response = await gmail.users.messages.get({
+      userId: 'me',
+      id: messageId,
+      format: 'full', // Get full message instead of metadata
     });
-    return res.data;
+    return response.data;
   } catch (err) {
-    console.error("Error getting message:", err);
+    console.error(`Error fetching message ${messageId}:`, err);
     throw err;
   }
 }
@@ -109,43 +155,68 @@ app.get("/api/emails", async (req, res) => {
   try {
     const auth = await authorize();
     const messages = await listMessages(auth);
+
+    console.log('Fetching detailed information for unread emails...');
+    let processed = 0;
+
     const emails = await Promise.all(
       messages.map(async (message) => {
-        const fullMessage = await getMessage(auth, message.id);
-        const headers = fullMessage.payload.headers;
-        const subject =
-          headers.find((header) => header.name === "Subject")?.value ||
-          "No Subject";
-        const from =
-          headers.find((header) => header.name === "From")?.value ||
-          "Unknown Sender";
-        const to =
-          headers.find((header) => header.name === "To")?.value ||
-          "Unknown Recipient";
-        const date =
-          headers.find((header) => header.name === "Date")?.value ||
-          new Date().toISOString();
+        try {
+          const fullMessage = await getMessage(auth, message.id);
+          processed++;
+          if (processed % 10 === 0) {
+            console.log(`Processed ${processed}/${messages.length} unread emails`);
+          }
 
-        return {
-          id: fullMessage.id,
-          threadId: fullMessage.threadId,
-          from,
-          to,
-          subject,
-          date,
-          body: fullMessage.snippet || "No body",
-        };
+          const headers = fullMessage.payload?.headers || [];
+          const getHeaderValue = (name) =>
+            headers.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+          return {
+            id: fullMessage.id,
+            threadId: fullMessage.threadId,
+            from: getHeaderValue('From'),
+            to: getHeaderValue('To'),
+            subject: getHeaderValue('Subject'),
+            date: getHeaderValue('Date'),
+            body: fullMessage.snippet,
+            labels: fullMessage.labelIds || [],
+          };
+        } catch (err) {
+          console.error(`Error processing email ${message.id}:`, err);
+          return null;
+        }
       })
     );
-    res.json(emails);
+
+    const validEmails = emails.filter(email => email !== null);
+
+    console.log(`Successfully fetched ${validEmails.length} unread emails`);
+    res.json(validEmails);
   } catch (error) {
     console.error("Error in /api/emails:", error);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch emails", details: error.message });
+    res.status(500).json({
+      error: "Failed to fetch emails",
+      details: error.message
+    });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+// Start server with better error handling
+try {
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  }).on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use. Please try these steps:`);
+      console.error('1. Run "taskkill /F /IM node.exe" in PowerShell as Administrator');
+      console.error(`2. Check if any other application is using port ${port}`);
+      console.error('3. Try using a different port by setting PORT in your .env file');
+      process.exit(1);
+    }
+    throw err;
+  });
+} catch (err) {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+}
