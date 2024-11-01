@@ -45,13 +45,19 @@
   }
 
   .email-item {
-    cursor: pointer;
     padding: 10px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid #ccc;
+    cursor: pointer;
   }
 
   .email-item:hover {
-    background-color: #f5f5f5;
+    background-color: #2c2c2c;
+  }
+
+  .email-item.selected,
+  .email-item:active {
+    background-color: #3a567c;
+    color: white;
   }
 
   .sender, .subject, .date {
