@@ -13,17 +13,19 @@
 
 <div class="email-list">
   <h2>Inbox</h2>
-  {#if emails.length === 0}
-    <p>No emails to display.</p>
-  {:else}
-    {#each emails as email}
-      <div class="email-item" on:click={() => selectEmail(email)}>
-        <span class="sender">{email.from}</span>
-        <span class="subject">{email.subject}</span>
-        <span class="date">{new Date(email.date).toLocaleDateString()}</span>
-      </div>
-    {/each}
-  {/if}
+  <div class="email-items">
+    {#if emails.length === 0}
+      <p>No emails to display.</p>
+    {:else}
+      {#each emails as email}
+        <div class="email-item" on:click={() => selectEmail(email)}>
+          <span class="sender">{email.from}</span>
+          <span class="subject">{email.subject}</span>
+          <span class="date">{new Date(email.date).toLocaleDateString()}</span>
+        </div>
+      {/each}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -31,6 +33,15 @@
     width: 300px;
     border-right: 1px solid #ccc;
     padding-right: 20px;
+    height: 100vh;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .email-items {
+    overflow-y: auto;
+    flex: 1;
   }
 
   .email-item {
