@@ -102,30 +102,18 @@ async function authorize() {
 
 async function listMessages(auth) {
   const gmail = google.gmail({ version: 'v1', auth });
-  let allMessages = [];
-  let pageToken = null;
-
   try {
-    do {
-      const response = await gmail.users.messages.list({
-        userId: 'me',
-        labelIds: ['UNREAD'],
-        maxResults: 100,
-        pageToken: pageToken,
-      });
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      maxResults: 20,
+      labelIds: ['INBOX'],
+    });
 
-      const messages = response.data.messages || [];
-      allMessages = allMessages.concat(messages);
-      pageToken = response.data.nextPageToken;
-
-      console.log(`Fetched ${allMessages.length} unread emails so far...`);
-    } while (pageToken);
-
-    console.log(`Total unread emails fetched: ${allMessages.length}`);
-    return allMessages;
-  } catch (err) {
-    console.error('Error fetching messages:', err);
-    throw err;
+    console.log('List messages response:', response.data);
+    return response.data.messages || [];
+  } catch (error) {
+    console.error('Error listing messages:', error);
+    return [];
   }
 }
 
@@ -135,12 +123,122 @@ async function getMessage(auth, messageId) {
     const response = await gmail.users.messages.get({
       userId: 'me',
       id: messageId,
-      format: 'full', // Get full message instead of metadata
+      format: 'full',
     });
-    return response.data;
+
+    const payload = response.data.payload;
+    let body = '';
+
+    // Improved decode function with encoding support
+    const decodeBody = (data, encoding = 'base64') => {
+      if (!data) return '';
+      try {
+        let decoded = Buffer.from(data, encoding).toString('utf8');
+        // Handle quoted-printable encoding
+        if (encoding === 'quoted-printable') {
+          decoded = decoded.replace(/=\r?\n/g, '')
+                         .replace(/=([0-9A-F]{2})/g,
+                           (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+        }
+        return decoded;
+      } catch (error) {
+        console.error(`Error decoding ${encoding}:`, error);
+        return '';
+      }
+    };
+
+    // Improved parts processing
+    const processParts = (part) => {
+      if (!part) return '';
+
+      // Check for content encoding
+      const encoding = part.body?.encoding || 'base64';
+
+      // Direct body data
+      if (part.body?.data) {
+        return decodeBody(part.body.data, encoding);
+      }
+
+      // Handle multipart
+      if (part.parts) {
+        let htmlContent = '';
+        let plainContent = '';
+
+        part.parts.forEach(p => {
+          const content = processParts(p);
+          if (p.mimeType === 'text/html') {
+            htmlContent += content;
+          } else if (p.mimeType === 'text/plain') {
+            plainContent += content;
+          }
+        });
+
+        // Prefer HTML content over plain text
+        return htmlContent || plainContent;
+      }
+
+      // Handle mimeType directly
+      if (part.mimeType === 'text/html' && part.body?.data) {
+        return decodeBody(part.body.data, encoding);
+      }
+      if (part.mimeType === 'text/plain' && part.body?.data) {
+        return decodeBody(part.body.data, encoding);
+      }
+
+      return '';
+    };
+
+    // Process the email content
+    if (payload.body?.data) {
+      body = decodeBody(payload.body.data);
+    } else if (payload.parts) {
+      body = processParts(payload);
+    }
+
+    // Fallback to snippet if no body content found
+    if (!body || body.trim() === '') {
+      body = `<div>${response.data.snippet || 'No content available'}</div>`;
+      console.log(`Using snippet for message ${messageId}`);
+    }
+
+    const headers = payload.headers || [];
+    const getHeader = (name) => {
+      const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
+      return header ? header.value : 'Unknown';
+    };
+
+    // Log successful processing
+    console.log(`Successfully processed message ${messageId}`);
+
+    return {
+      id: response.data.id || messageId,
+      threadId: response.data.threadId || '',
+      from: getHeader('from'),
+      to: getHeader('to'),
+      subject: getHeader('subject'),
+      date: getHeader('date'),
+      body: body,
+      attachments: payload.parts ? payload.parts
+        .filter(part => part.filename && part.filename.length > 0)
+        .map(part => ({
+          filename: part.filename,
+          mimeType: part.mimeType,
+          attachmentId: part.body.attachmentId
+        })) : []
+    };
+
   } catch (err) {
-    console.error(`Error fetching message ${messageId}:`, err);
-    throw err;
+    console.error(`Error processing message ${messageId}:`, err);
+    return {
+      id: messageId,
+      threadId: '',
+      from: 'Error loading message',
+      to: 'Error loading message',
+      subject: 'Error loading message',
+      date: new Date().toISOString(),
+      body: 'Error loading message',
+      attachments: []
+    };
   }
 }
 
@@ -155,44 +253,30 @@ app.get("/api/emails", async (req, res) => {
   try {
     const auth = await authorize();
     const messages = await listMessages(auth);
-
-    console.log('Fetching detailed information for unread emails...');
-    let processed = 0;
+    console.log('Found messages:', messages.length);
 
     const emails = await Promise.all(
       messages.map(async (message) => {
         try {
-          const fullMessage = await getMessage(auth, message.id);
-          processed++;
-          if (processed % 10 === 0) {
-            console.log(`Processed ${processed}/${messages.length} unread emails`);
-          }
-
-          const headers = fullMessage.payload?.headers || [];
-          const getHeaderValue = (name) =>
-            headers.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value || '';
-
-          return {
-            id: fullMessage.id,
-            threadId: fullMessage.threadId,
-            from: getHeaderValue('From'),
-            to: getHeaderValue('To'),
-            subject: getHeaderValue('Subject'),
-            date: getHeaderValue('Date'),
-            body: fullMessage.snippet,
-            labels: fullMessage.labelIds || [],
-          };
-        } catch (err) {
-          console.error(`Error processing email ${message.id}:`, err);
+          return await getMessage(auth, message.id);
+        } catch (error) {
+          console.error('Error processing message:', message.id, error);
           return null;
         }
       })
     );
 
     const validEmails = emails.filter(email => email !== null);
+    console.log('Valid emails processed:', validEmails.length);
 
-    console.log(`Successfully fetched ${validEmails.length} unread emails`);
-    res.json(validEmails);
+    if (validEmails.length === 0) {
+      res.status(404).json({
+        error: "No valid emails found",
+        details: "All processed emails were invalid"
+      });
+    } else {
+      res.json(validEmails);
+    }
   } catch (error) {
     console.error("Error in /api/emails:", error);
     res.status(500).json({
