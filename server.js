@@ -102,15 +102,31 @@ async function authorize() {
 
 async function listMessages(auth) {
   const gmail = google.gmail({ version: 'v1', auth });
-  try {
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      maxResults: 20,
-      labelIds: ['INBOX'],
-    });
+  let allMessages = [];
+  let pageToken = undefined;
 
-    console.log('List messages response:', response.data);
-    return response.data.messages || [];
+  try {
+    do {
+      console.log('Fetching page of messages...');
+      const response = await gmail.users.messages.list({
+        userId: 'me',
+        labelIds: ['UNREAD', 'INBOX'],
+        pageToken: pageToken,
+        maxResults: 500 // Get maximum messages per request
+      });
+
+      if (response.data.messages) {
+        allMessages = allMessages.concat(response.data.messages);
+        console.log(`Fetched ${allMessages.length} messages so far...`);
+      }
+
+      pageToken = response.data.nextPageToken;
+
+    } while (pageToken); // Continue while there are more pages
+
+    console.log('Total messages found:', allMessages.length);
+    return allMessages;
+
   } catch (error) {
     console.error('Error listing messages:', error);
     return [];
