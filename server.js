@@ -17,7 +17,11 @@ console.log("Port:", port);
 
 app.use(cors());
 
-const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+const SCOPES = [
+  'https://mail.google.com/',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.readonly'
+];
 const TOKEN_PATH = path.join(process.cwd(), "token.json");
 const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
 
@@ -112,7 +116,7 @@ async function listMessages(auth) {
         userId: 'me',
         labelIds: ['UNREAD', 'INBOX'],
         pageToken: pageToken,
-        maxResults: 500 // Get maximum messages per request
+        maxResults: 500
       });
 
       if (response.data.messages) {
@@ -122,14 +126,13 @@ async function listMessages(auth) {
 
       pageToken = response.data.nextPageToken;
 
-    } while (pageToken); // Continue while there are more pages
+    } while (pageToken);
 
     console.log('Total messages found:', allMessages.length);
     return allMessages;
-
   } catch (error) {
     console.error('Error listing messages:', error);
-    return [];
+    throw error;
   }
 }
 
@@ -139,92 +142,23 @@ async function getMessage(auth, messageId) {
     const response = await gmail.users.messages.get({
       userId: 'me',
       id: messageId,
-      format: 'full',
+      format: 'metadata',
+      metadataHeaders: ['From', 'To', 'Subject', 'Date']
     });
 
-    const payload = response.data.payload;
-    let body = '';
-
-    // Improved decode function with encoding support
-    const decodeBody = (data, encoding = 'base64') => {
-      if (!data) return '';
-      try {
-        let decoded = Buffer.from(data, encoding).toString('utf8');
-        // Handle quoted-printable encoding
-        if (encoding === 'quoted-printable') {
-          decoded = decoded.replace(/=\r?\n/g, '')
-                         .replace(/=([0-9A-F]{2})/g,
-                           (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-        }
-        return decoded;
-      } catch (error) {
-        console.error(`Error decoding ${encoding}:`, error);
-        return '';
-      }
-    };
-
-    // Improved parts processing
-    const processParts = (part) => {
-      if (!part) return '';
-
-      // Check for content encoding
-      const encoding = part.body?.encoding || 'base64';
-
-      // Direct body data
-      if (part.body?.data) {
-        return decodeBody(part.body.data, encoding);
-      }
-
-      // Handle multipart
-      if (part.parts) {
-        let htmlContent = '';
-        let plainContent = '';
-
-        part.parts.forEach(p => {
-          const content = processParts(p);
-          if (p.mimeType === 'text/html') {
-            htmlContent += content;
-          } else if (p.mimeType === 'text/plain') {
-            plainContent += content;
-          }
-        });
-
-        // Prefer HTML content over plain text
-        return htmlContent || plainContent;
-      }
-
-      // Handle mimeType directly
-      if (part.mimeType === 'text/html' && part.body?.data) {
-        return decodeBody(part.body.data, encoding);
-      }
-      if (part.mimeType === 'text/plain' && part.body?.data) {
-        return decodeBody(part.body.data, encoding);
-      }
-
-      return '';
-    };
-
-    // Process the email content
-    if (payload.body?.data) {
-      body = decodeBody(payload.body.data);
-    } else if (payload.parts) {
-      body = processParts(payload);
+    if (!response?.data) {
+      console.error('Invalid message data for ID:', messageId);
+      throw new Error('Invalid message data');
     }
 
-    // Fallback to snippet if no body content found
-    if (!body || body.trim() === '') {
-      body = `<div>${response.data.snippet || 'No content available'}</div>`;
-      console.log(`Using snippet for message ${messageId}`);
-    }
-
-    const headers = payload.headers || [];
+    const headers = response.data.payload?.headers || [];
     const getHeader = (name) => {
-      const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
-      return header ? header.value : 'Unknown';
+      if (!name) return '';
+      const header = headers.find(h => h.name?.toLowerCase() === name.toLowerCase());
+      return header ? header.value : '';
     };
 
-    // Log successful processing
-    console.log(`Successfully processed message ${messageId}`);
+    const labels = Array.isArray(response.data.labelIds) ? response.data.labelIds : [];
 
     return {
       id: response.data.id || messageId,
@@ -233,28 +167,12 @@ async function getMessage(auth, messageId) {
       to: getHeader('to'),
       subject: getHeader('subject'),
       date: getHeader('date'),
-      body: body,
-      attachments: payload.parts ? payload.parts
-        .filter(part => part.filename && part.filename.length > 0)
-        .map(part => ({
-          filename: part.filename,
-          mimeType: part.mimeType,
-          attachmentId: part.body.attachmentId
-        })) : []
+      snippet: response.data.snippet || '',
+      labels: labels
     };
-
   } catch (err) {
-    console.error(`Error processing message ${messageId}:`, err);
-    return {
-      id: messageId,
-      threadId: '',
-      from: 'Error loading message',
-      to: 'Error loading message',
-      subject: 'Error loading message',
-      date: new Date().toISOString(),
-      body: 'Error loading message',
-      attachments: []
-    };
+    console.error(`Error fetching message ${messageId}:`, err);
+    throw err;
   }
 }
 
@@ -269,34 +187,84 @@ app.get("/api/emails", async (req, res) => {
   try {
     const auth = await authorize();
     const messages = await listMessages(auth);
-    console.log('Found messages:', messages.length);
+    console.log(`Found ${messages.length} messages, fetching details...`);
 
     const emails = await Promise.all(
       messages.map(async (message) => {
         try {
           return await getMessage(auth, message.id);
         } catch (error) {
-          console.error('Error processing message:', message.id, error);
+          console.error(`Error processing message ${message.id}:`, error);
           return null;
         }
       })
     );
 
     const validEmails = emails.filter(email => email !== null);
-    console.log('Valid emails processed:', validEmails.length);
+    console.log(`Successfully processed ${validEmails.length} emails`);
 
     if (validEmails.length === 0) {
-      res.status(404).json({
-        error: "No valid emails found",
-        details: "All processed emails were invalid"
-      });
-    } else {
-      res.json(validEmails);
+      console.warn('No valid emails were processed');
     }
+
+    res.json(validEmails);
   } catch (error) {
-    console.error("Error in /api/emails:", error);
+    console.error("Error fetching emails:", error);
     res.status(500).json({
       error: "Failed to fetch emails",
+      details: error.message
+    });
+  }
+});
+
+// Add these new endpoints
+app.post("/api/emails/:id/read", async (req, res) => {
+  try {
+    console.log('Marking email as read:', req.params.id);
+    const auth = await authorize();
+    const gmail = google.gmail({ version: 'v1', auth });
+
+    await gmail.users.messages.modify({
+      userId: 'me',
+      id: req.params.id,
+      requestBody: {
+        removeLabelIds: ['UNREAD']
+      }
+    });
+
+    console.log('Email marked as read successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking message as read:', error);
+    res.status(500).json({
+      error: 'Failed to mark message as read',
+      details: error.message
+    });
+  }
+});
+
+app.delete("/api/emails/:id", async (req, res) => {
+  try {
+    console.log('Deleting email:', req.params.id);
+    const auth = await authorize();
+    const gmail = google.gmail({ version: 'v1', auth });
+
+    // First modify the message to move it to TRASH
+    await gmail.users.messages.modify({
+      userId: 'me',
+      id: req.params.id,
+      requestBody: {
+        addLabelIds: ['TRASH'],
+        removeLabelIds: ['INBOX', 'UNREAD']
+      }
+    });
+
+    console.log('Email moved to trash successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).json({
+      error: 'Failed to delete message',
       details: error.message
     });
   }

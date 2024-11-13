@@ -2,15 +2,18 @@
   export let email: any;
 
   function sanitizeHtml(html: string) {
-    // Basic sanitization - you might want to use DOMPurify in production
+    // Basic sanitization
     return html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/on\w+="[^"]*"/g, '');
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/on\w+="[^"]*"/g, "");
   }
 
-  function formatBody(body: string) {
+  function formatBody(body: string | undefined) {
+    if (body === undefined || body === null) {
+      return "<p>No email body available.</p>";
+    }
     // If the body is plain text, wrap it in pre tags
-    if (!body.includes('<')) {
+    if (!body.includes("<")) {
       return `<pre style="white-space: pre-wrap;">${body}</pre>`;
     }
     return body;
